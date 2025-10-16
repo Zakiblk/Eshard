@@ -28,6 +28,39 @@ def pretty_hex(x):
     return f"0x{x:016x}"
 
 
+
+
+#-------------------------FUNCTION FOR STURCT_FINDER---------------------------
+def find_heap(filename):
+    s, e, size, off = 0, 0, 0, 0
+    with open(filename, 'rb') as f:
+        elf = ELFFile(f)
+
+        print("\nFallback: scanning PT_LOAD writable segments...")
+        segs = fallback_from_segments(elf)
+
+        print("Writable PT_LOAD segments (largest first):")
+        filtered = []
+        for s, e, size, off in segs[:10]:
+            print(f"  {pretty_hex(s)} - {pretty_hex(e)}  size={size}  offset={pretty_hex(off)}")
+            # 👉 Ne garder que les segments plausibles pour le heap
+            if 0x0000500000000000 <= s < 0x0000700000000000:
+                filtered.append((s, e, size, off))
+
+        if filtered:
+            # on prend le plus grand segment filtré
+            s, e, size, off = sorted(filtered, key=lambda x: x[2], reverse=True)[0]
+            print("\nMost likely heap (heuristic: largest writable PT_LOAD in heap range):")
+            print(f"  {pretty_hex(s)} - {pretty_hex(e)}  size={size}  offset={pretty_hex(off)}")
+        else:
+            # sinon, on retombe sur le premier par défaut
+            print("\nMost likely heap (default: largest writable PT_LOAD):")
+            s, e, size, off = segs[0]
+            print(f"  {pretty_hex(s)} - {pretty_hex(e)}  size={size}  offset={pretty_hex(off)}")
+    return s, e, size, off
+
+
+
 # --------------------------- Main ----------------------------
 def main(argv):
     if len(argv) < 2:

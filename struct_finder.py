@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 import json, sys, os
 import struct as struct_mod
+from heap import find_heap
 # ---------------- CONFIG ----------------
-CORE_FILE = "core.10000"  # path to core file
+CORE_FILE = "core.100"  # path to core file
 START_ADDR = 0x000055cc0a022000#0x000055f1a1ef5000#0x00005644e8619000 # 0x5644e861a320
 END_ADDR   = START_ADDR + 0x000000000283e000#0x0000000000413000#0x0000000000097000
 SEGMENT_VADDR = START_ADDR#0x00005644e8619000#0x5644e8619000 # 0x560d0fb60000
@@ -11,6 +12,8 @@ ALIGN = 8  # pointer alignment
 MAX_RESULTS = None
 # ----------------------------------------
 
+
+#-----------------------------------------
 def read_memory(core_file, start_addr, end_addr, seg_offset, seg_vaddr):
     """Read memory bytes from core file for a virtual address range"""
     file_offset_start = seg_offset + (start_addr - seg_vaddr)
@@ -19,6 +22,7 @@ def read_memory(core_file, start_addr, end_addr, seg_offset, seg_vaddr):
         f.seek(file_offset_start)
         data = f.read(size)
     return data, file_offset_start
+
 
 def find_valid_pointers(mem_blob, base_addr, align=8):
     """Scan memory for pointers pointing inside the same region"""
@@ -29,6 +33,7 @@ def find_valid_pointers(mem_blob, base_addr, align=8):
         if (START_ADDR <= val < END_ADDR) or (val==0):
             valid_ptrs.add(base_addr + i)  # store location of pointer itself
     return valid_ptrs
+
 
 def detect_structs(mem_blob, base_addr, structs, valid_ptr_locs):
     """Detect struct instances in memory using pointer validation"""
@@ -100,16 +105,27 @@ def detect_structs(mem_blob, base_addr, structs, valid_ptr_locs):
                         struct_matches.append(addr)
                         if struct_matches:
                             detected[name] = struct_matches
-                            if name == 'array_entry':
-                                continue
+                            #if name == 'array_entry':
+                            #    continue
                             print(f"Detected {len(struct_matches)} instance(s) of {name}:")
-                            for a in struct_matches:
-                                print(f"  0x{a:016x}")
+                            #for a in struct_matches:
+                            #    print(f"  0x{a:016x}")
     return detected
 
+#---------------------- HELPER FUNCTION----------------------------------------
+def update_globals(core_file):
+    global START_ADDR, END_ADDR, SEGMENT_OFFSET, SEGMENT_VADDR 
+    start, end, size, offset = find_heap(core_file)
+    START_ADDR = start     
+    END_ADDR = end 
+    SEGMENT_OFFSET = offset 
+    SEGMENT_VADDR = START_ADDR
+    return 0
+
+#-------------------------------------------------------------------------------
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: detect_structs.py <structs.json>")
+    if len(sys.argv) != 3:
+        print("Usage: detect_structs.py <structs.json> <dump_file>")
         return 1
 
     json_path = sys.argv[1]
@@ -117,10 +133,18 @@ def main():
         print("Structs JSON not found:", json_path)
         return 1
 
+    CORE_FILE = sys.argv[2]
+    if not os.path.isfile(json_path):
+        print("Dump file not found:", CORE_FILE)
+        return 1
+    
     # load structs JSON (sorted by pointer count descending)
     with open(json_path, 'r') as f:
         structs = json.load(f)
 
+    # try to find the heap position with heuristics
+    update_globals(CORE_FILE)
+    
     # read memory
     mem_blob, _ = read_memory(CORE_FILE, START_ADDR, END_ADDR, SEGMENT_OFFSET, SEGMENT_VADDR)
     print(f"Read {len(mem_blob)} bytes from memory 0x{START_ADDR:x}-0x{END_ADDR:x}")
