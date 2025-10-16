@@ -2,11 +2,11 @@
 import json, sys, os
 import struct as struct_mod
 # ---------------- CONFIG ----------------
-CORE_FILE = "core.40938"  # path to core file
-START_ADDR = 0x560d0fb606b0
-END_ADDR   = 0x560d0fbb3d60
-SEGMENT_VADDR = 0x560d0fb60000
-SEGMENT_OFFSET = 0x33c0
+CORE_FILE = "core.10000"  # path to core file
+START_ADDR = 0x000055cc0a022000#0x000055f1a1ef5000#0x00005644e8619000 # 0x5644e861a320
+END_ADDR   = START_ADDR + 0x000000000283e000#0x0000000000413000#0x0000000000097000
+SEGMENT_VADDR = START_ADDR#0x00005644e8619000#0x5644e8619000 # 0x560d0fb60000
+SEGMENT_OFFSET = 0x0000000000003430#0x0000000000003430 #0x33c0
 ALIGN = 8  # pointer alignment
 MAX_RESULTS = None
 # ----------------------------------------
@@ -26,7 +26,7 @@ def find_valid_pointers(mem_blob, base_addr, align=8):
     size = len(mem_blob)
     for i in range(0, size - 8 + 1, align):
         val = struct_mod.unpack_from("<Q", mem_blob, i)[0]
-        if (0x560000000000 <= val < 0x56ffffffffff) or (val==0):
+        if (START_ADDR <= val < END_ADDR) or (val==0):
             valid_ptrs.add(base_addr + i)  # store location of pointer itself
     return valid_ptrs
 
@@ -36,6 +36,8 @@ def detect_structs(mem_blob, base_addr, structs, valid_ptr_locs):
     detected = {}
     for struct in structs:
         name = struct['name']
+        if "array" in name:
+            continue
         print("\n" + "=" * 50)
         print(f"🔹 TRYING FOR STRUCT: {name}")
         print("=" * 50)        
@@ -48,6 +50,8 @@ def detect_structs(mem_blob, base_addr, structs, valid_ptr_locs):
         struct_matches = []
         for offset in range(0, heap_size - size + 1,8):
             addr = base_addr + offset
+            #if int.from_bytes(mem_blob[offset: offset + struct["size"]], byteorder='little') == 0:
+            #    continue
             if all((addr + p_off) in valid_ptr_locs for p_off in pointer_offsets):
                 ascii_ok = True
                 print(f"Struct candidate at 0x{addr:X}")
@@ -68,7 +72,7 @@ def detect_structs(mem_blob, base_addr, structs, valid_ptr_locs):
                                     # print("expected length is", m_len - 1)
                                     string_val = member_bytes.split(b'\x00')[0].decode('ascii', errors='ignore')
                                     print(f"  Member {m['name']} at offset {m_off}: '{string_val}'")
-                                    if not all(32 <= b < 127 or b==0 for b in member_bytes):
+                                    if not all(32 <= b < 127  for b in member_bytes[:-1]):
                                         print("not all ascii")
                                         ascii_ok = False
                                         break
@@ -96,6 +100,8 @@ def detect_structs(mem_blob, base_addr, structs, valid_ptr_locs):
                         struct_matches.append(addr)
                         if struct_matches:
                             detected[name] = struct_matches
+                            if name == 'array_entry':
+                                continue
                             print(f"Detected {len(struct_matches)} instance(s) of {name}:")
                             for a in struct_matches:
                                 print(f"  0x{a:016x}")
