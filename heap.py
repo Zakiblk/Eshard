@@ -59,7 +59,33 @@ def find_heap(filename):
             print(f"  {pretty_hex(s)} - {pretty_hex(e)}  size={size}  offset={pretty_hex(off)}")
     return s, e, size, off
 
+def find_mmap_heap(filename):
+    s, e, size, off = 0, 0, 0, 0
+    with open(filename, 'rb') as f:
+        elf = ELFFile(f)
 
+        print("\nFallback: scanning PT_LOAD writable segments...")
+        segs = fallback_from_segments(elf)
+
+        print("Writable PT_LOAD segments (largest first):")
+        filtered = []
+        for s, e, size, off in segs[:10]:
+            print(f"  {pretty_hex(s)} - {pretty_hex(e)}  size={size}  offset={pretty_hex(off)}")
+            # 👉 Ne garder que les segments plausibles pour le heap alloué par mmap
+            if 0x700000000000 <= s < 0x00007fffffffffff:
+                filtered.append((s, e, size, off))
+
+        if filtered:
+            # on prend le plus grand segment filtré
+            s, e, size, off = sorted(filtered, key=lambda x: x[2], reverse=True)[0]
+            print("\nMost likely heap (heuristic: largest writable PT_LOAD in heap range):")
+            print(f"  {pretty_hex(s)} - {pretty_hex(e)}  size={size}  offset={pretty_hex(off)}")
+        else:
+            # sinon, on retombe sur le premier par défaut
+            print("\nMost likely heap (default: largest writable PT_LOAD):")
+            s, e, size, off = segs[0]
+            print(f"  {pretty_hex(s)} - {pretty_hex(e)}  size={size}  offset={pretty_hex(off)}")
+    return s, e, size, off
 
 # --------------------------- Main ----------------------------
 def main(argv):

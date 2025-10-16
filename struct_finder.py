@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 import json, sys, os
 import struct as struct_mod
-from heap import find_heap
+from heap import find_heap, find_mmap_heap
+from stack import find_stack
 # ---------------- CONFIG ----------------
 CORE_FILE = "core.100"  # path to core file
 START_ADDR = 0x000055cc0a022000#0x000055f1a1ef5000#0x00005644e8619000 # 0x5644e861a320
@@ -10,6 +11,10 @@ SEGMENT_VADDR = START_ADDR#0x00005644e8619000#0x5644e8619000 # 0x560d0fb60000
 SEGMENT_OFFSET = 0x0000000000003430#0x0000000000003430 #0x33c0
 ALIGN = 8  # pointer alignment
 MAX_RESULTS = None
+STACK_START = 0x7f0000000000
+STACK_END = 0x7fffffffffff
+MMAP_HEAP_START = 0x7f0000000000
+MMAP_HEAP_END = 0x7fffffffffff
 # ----------------------------------------
 
 
@@ -30,7 +35,7 @@ def find_valid_pointers(mem_blob, base_addr, align=8):
     size = len(mem_blob)
     for i in range(0, size - 8 + 1, align):
         val = struct_mod.unpack_from("<Q", mem_blob, i)[0]
-        if (START_ADDR <= val < END_ADDR) or (val==0):
+        if (START_ADDR <= val < END_ADDR) or (val==0) or (STACK_START < val < STACK_END) or (MMAP_HEAP_START < val < MMAP_HEAP_END):
             valid_ptrs.add(base_addr + i)  # store location of pointer itself
     return valid_ptrs
 
@@ -77,10 +82,14 @@ def detect_structs(mem_blob, base_addr, structs, valid_ptr_locs):
                                     # print("expected length is", m_len - 1)
                                     string_val = member_bytes.split(b'\x00')[0].decode('ascii', errors='ignore')
                                     print(f"  Member {m['name']} at offset {m_off}: '{string_val}'")
-                                    if not all(32 <= b < 127  for b in member_bytes[:-1]):
-                                        print("not all ascii")
+                                    if (not all(32 <= b < 127  for b in member_bytes[:-1])) or member_bytes[-1] != 0:
+                                        #if name == "Struct15_t":
+                                        #    print("not all ascii")
                                         ascii_ok = False
                                         break
+                                    #elif member_bytes[-1] != 0 :
+                                    #    if name == "Struct15_t":
+                                    #        print("last character is not 0")
                                     # else: print("ASCII OK FOR STRING,", m)
 
                 if ascii_ok:
@@ -98,7 +107,8 @@ def detect_structs(mem_blob, base_addr, structs, valid_ptr_locs):
                             enum_val = int.from_bytes(enum_bytes, byteorder='little', signed=False)
                             if not (0 <= enum_val <= 3):
                                 enums_ok = False
-                                print("enum doesnt match,", enum_val)
+                                if name == "Struct15_t":
+                                    print("enum doesnt match,", enum_val)
                                 break
 
                     if enums_ok:
@@ -112,14 +122,21 @@ def detect_structs(mem_blob, base_addr, structs, valid_ptr_locs):
                             #    print(f"  0x{a:016x}")
     return detected
 
+
 #---------------------- HELPER FUNCTION----------------------------------------
 def update_globals(core_file):
-    global START_ADDR, END_ADDR, SEGMENT_OFFSET, SEGMENT_VADDR 
+    global START_ADDR, END_ADDR, SEGMENT_OFFSET, SEGMENT_VADDR, STACK_START, STACK_END, MMAP_HEAP_START, MMAP_HEAP_END
     start, end, size, offset = find_heap(core_file)
     START_ADDR = start     
     END_ADDR = end 
     SEGMENT_OFFSET = offset 
     SEGMENT_VADDR = START_ADDR
+    start, end, *_ = find_stack(core_file)
+    STACK_START = start
+    STACK_END = end
+    start, end, *_ = find_mmap_heap(core_file)
+    MMAP_HEAP_START = start
+    MMAP_HEAP_END = end
     return 0
 
 #-------------------------------------------------------------------------------
